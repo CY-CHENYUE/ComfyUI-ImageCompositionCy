@@ -906,9 +906,18 @@ class CanvasEditor {
         // 检查是否已经存在相同索引的图片
         const source = index === 0 ? 'background' : `input_${index}`;
         const existingIndex = this.images.findIndex(img => img.source === source);
+        
+        // 如果图片已存在且源相同，检查是否真的需要更新
         if (existingIndex >= 0) {
-            // 如果已存在，只更新图片元素，保持用户的调整
             const existing = this.images[existingIndex];
+            
+            // 如果源路径相同，直接返回，避免重复加载
+            if (existing.element && existing.element.src === src) {
+                console.log(`[CanvasEditor] Image ${source} already loaded with same src, skipping`);
+                return;
+            }
+            
+            // 如果已存在但源不同，更新图片元素
             const img = new Image();
             img.onload = () => {
                 // 检查图片是否真的变化了
@@ -957,6 +966,7 @@ class CanvasEditor {
         }
         
         // 添加新图片
+        console.log(`[CanvasEditor] Adding new image ${source}`);
         const img = new Image();
         img.onload = () => {
             let imageData;
@@ -1183,40 +1193,53 @@ app.registerExtension({
                 const node = this;
                 console.log("[ImageCompositor] Node created, ID:", node.id);
                 
+                // 添加防抖定时器
+                node.updateDebounceTimer = null;
+                node.isUpdating = false;
+                
                 // 监听连接变化，实现实时预览
                 chainCallback(node, "onConnectionsChange", function(type, index, connected, link_info) {
                     console.log(`[ImageCompositor] Connection change - type: ${type}, index: ${index}, connected: ${connected}`);
                     
-                    // 延迟一帧以确保连接完成
-                    setTimeout(() => {
+                    // 使用防抖机制，避免频繁更新
+                    if (node.updateDebounceTimer) {
+                        clearTimeout(node.updateDebounceTimer);
+                    }
+                    
+                    node.updateDebounceTimer = setTimeout(() => {
                         // 检查并更新Canvas
-                        if (node.canvasEditor) {
+                        if (node.canvasEditor && !node.isUpdating) {
                             node.updateCanvasFromInputs();
                         }
-                    }, 0);
+                        node.updateDebounceTimer = null;
+                    }, 50);  // 50ms防抖延迟
                 });
                 
                 // 添加更新Canvas的方法
                 node.updateCanvasFromInputs = function() {
-                    if (!this.canvasEditor) return;
+                    if (!this.canvasEditor || this.isUpdating) return;
                     
-                    // 保存现有图片的状态
-                    const existingStates = {};
-                    this.canvasEditor.images.forEach(img => {
-                        if (!img.isBackground) {  // 只保存非背景图的状态
-                            existingStates[img.source] = {
-                                x: img.x,
-                                y: img.y,
-                                width: img.width,
-                                height: img.height,
-                                rotation: img.rotation,
-                                opacity: img.opacity
-                            };
-                        }
-                    });
+                    // 设置更新标志，防止并发更新
+                    this.isUpdating = true;
                     
-                    // 记录当前连接的图片源
-                    const connectedSources = new Set();
+                    try {
+                        // 保存现有图片的状态
+                        const existingStates = {};
+                        this.canvasEditor.images.forEach(img => {
+                            if (!img.isBackground) {  // 只保存非背景图的状态
+                                existingStates[img.source] = {
+                                    x: img.x,
+                                    y: img.y,
+                                    width: img.width,
+                                    height: img.height,
+                                    rotation: img.rotation,
+                                    opacity: img.opacity
+                                };
+                            }
+                        });
+                        
+                        // 记录当前连接的图片源
+                        const connectedSources = new Set();
                     
                     // 获取画布尺寸
                     const widthWidget = this.widgets?.find(w => w.name === "canvas_width");
@@ -1276,13 +1299,21 @@ app.registerExtension({
                         }
                     }
                     
-                    // 移除不再连接的图片
-                    this.canvasEditor.images = this.canvasEditor.images.filter(img => {
-                        return img.isBackground ? connectedSources.has('background') : 
-                               connectedSources.has(img.source);
-                    });
-                    
-                    this.canvasEditor.renderComposite();
+                        // 先移除所有不再连接的图片
+                        this.canvasEditor.images = this.canvasEditor.images.filter(img => {
+                            const shouldKeep = img.isBackground ? connectedSources.has('background') : 
+                                              connectedSources.has(img.source);
+                            if (!shouldKeep) {
+                                console.log(`[ImageCompositor] Removing disconnected image: ${img.source}`);
+                            }
+                            return shouldKeep;
+                        });
+                        
+                        this.canvasEditor.renderComposite();
+                    } finally {
+                        // 确保清除更新标志
+                        this.isUpdating = false;
+                    }
                 };
                 
                 // 查找并隐藏composition_data widget
@@ -1323,7 +1354,9 @@ app.registerExtension({
                     
                     // 初始化完成后，检查是否已有连接的输入
                     setTimeout(() => {
-                        node.updateCanvasFromInputs();
+                        if (!node.isUpdating) {
+                            node.updateCanvasFromInputs();
+                        }
                     }, 100);
                 }, 0);
             });
