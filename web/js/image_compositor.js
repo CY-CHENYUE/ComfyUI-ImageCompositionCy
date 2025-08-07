@@ -519,28 +519,10 @@ class CanvasEditor {
             this.redo();
         }
         
-        // 复制/粘贴
-        else if (ctrl && key === 'c') {
-            e.preventDefault();
-            this.copy();
-        } else if (ctrl && key === 'v') {
-            e.preventDefault();
-            this.paste();
-        } else if (ctrl && key === 'x') {
-            e.preventDefault();
-            this.cut();
-        }
-        
         // 全选
         else if (ctrl && key === 'a') {
             e.preventDefault();
             this.selectAll();
-        }
-        
-        // 删除
-        else if (key === 'delete' || key === 'backspace') {
-            e.preventDefault();
-            this.deleteSelected();
         }
         
         // 方向键微调
@@ -589,10 +571,6 @@ class CanvasEditor {
                 { label: '置底', action: () => this.sendToBack() },
                 { label: '上移一层', action: () => this.bringForward() },
                 { label: '下移一层', action: () => this.sendBackward() },
-                { separator: true },
-                { label: '复制', action: () => this.copy() },
-                { label: '粘贴', action: () => this.paste() },
-                { label: '删除', action: () => this.deleteSelected() },
                 { separator: true },
                 { label: '属性...', action: () => this.showPropertiesPanel(clickedImage) }
             ];
@@ -690,7 +668,8 @@ class CanvasEditor {
         }
     }
     
-    // 编辑操作
+    // 编辑操作（已禁用）
+    /*
     copy() {
         if (this.selectedImage) {
             this.clipboard = {
@@ -735,6 +714,7 @@ class CanvasEditor {
             this.updateNodeData();
         }
     }
+    */
     
     selectAll() {
         this.selectedImages.clear();
@@ -860,13 +840,42 @@ class CanvasEditor {
         
         // 如果没有内容，显示提示
         if (this.images.length === 0) {
-            this.ctx.fillStyle = '#666';
-            this.ctx.font = '14px Arial';
-            this.ctx.textAlign = 'center';
             const logicalWidth = this.canvas.width / this.dpr;
             const logicalHeight = this.canvas.height / this.dpr;
-            this.ctx.fillText('连接图片即可实时预览合成效果', logicalWidth / 2, logicalHeight / 2);
+            
+            // 主提示文字
+            this.ctx.fillStyle = '#ccc';
+            this.ctx.font = 'bold 32px Arial';
+            this.ctx.textAlign = 'center';
+            this.ctx.textBaseline = 'middle';
+            this.ctx.fillText('连接图片即可实时预览合成效果', logicalWidth / 2, logicalHeight / 2 - 25);
+            
+            // 显示快捷键提示
+            this.ctx.font = '22px Arial';
+            this.ctx.fillStyle = '#aaa';
+            this.ctx.fillText('使用 [ ] 键调整图层，鼠标悬停查看更多快捷键', logicalWidth / 2, logicalHeight / 2 + 25);
         }
+        
+        // 始终在右下角显示帮助提示
+        this.drawHelpHint();
+    }
+    
+    drawHelpHint() {
+        // 在右下角显示帮助提示
+        const logicalWidth = this.canvas.width / this.dpr;
+        const logicalHeight = this.canvas.height / this.dpr;
+        
+        this.ctx.save();
+        this.ctx.font = '16px Arial';
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+        this.ctx.textAlign = 'right';
+        this.ctx.textBaseline = 'bottom';
+        
+        const helpText = '快捷键: [ ] 调整图层';
+        const padding = 10;
+        this.ctx.fillText(helpText, logicalWidth - padding, logicalHeight - padding);
+        
+        this.ctx.restore();
     }
     
     drawCheckerboard() {
@@ -1322,8 +1331,8 @@ app.registerExtension({
                     }
                     
                     // 动态调整节点高度
-                    // 基础高度（包含Canvas 420px + input_count widget 30px + padding）
-                    const canvasHeight = 420;  // Canvas在节点内的显示高度
+                    // 基础高度（包含Canvas + input_count widget + padding）
+                    const canvasHeight = 400;  // Canvas在节点内的显示高度
                     const widgetHeight = 30;   // input_count widget的高度
                     const inputHeight = 30;    // 每个输入槽的高度
                     const padding = 20;        // 额外padding
@@ -1515,6 +1524,15 @@ app.registerExtension({
                     canvasEl.style.imageRendering = "high-quality";
                     canvasEl.style.willChange = "transform";  // 启用GPU加速
                     
+                    // 添加提示信息
+                    canvasEl.title = "图片编辑器快捷键：\n" +
+                                    "• 拖拽: 移动图片\n" +
+                                    "• 拖拽边角: 缩放图片\n" +
+                                    "• 拖拽绿色手柄: 旋转图片\n" +
+                                    "• [ / ]: 下移/上移一层\n" +
+                                    "• Shift+[ / Shift+]: 移到最底/最顶层\n" +
+                                    "• Ctrl+Z/Y: 撤销/重做";
+                    
                     // 使用addDOMWidget添加Canvas
                     console.log("[ImageCompositor] Adding Canvas widget");
                     const canvasWidget = node.addDOMWidget("canvas_display", "canvas", canvasEl, {
@@ -1527,12 +1545,13 @@ app.registerExtension({
                     node.canvasEditor = new CanvasEditor(canvasEl, node);
                     console.log(`[ImageCompositor] Canvas initialized - Display: ${displaySize}x${displaySize}, Actual: ${canvasEl.width}x${canvasEl.height}, DPR: ${dpr}`);
                     
-                    // 初始设置节点尺寸（暂时使用固定值，稍后会根据input_count调整）
+                    // 初始设置节点尺寸（基于默认3个输入计算）
+                    // Canvas 400px + widget 30px + 3个输入90px + padding 20px = 540px
                     node.size[0] = Math.max(node.size[0], 420);
-                    node.size[1] = Math.max(node.size[1], 700);
+                    node.size[1] = Math.max(node.size[1], 540);
                     
                     // 设置最小高度和宽度（稍后会动态更新）
-                    node.minHeight = 700;
+                    node.minHeight = 540;
                     node.minWidth = 420;
                     
                     // 重写onResize回调，强制执行最小尺寸
