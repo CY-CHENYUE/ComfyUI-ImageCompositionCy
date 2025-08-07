@@ -280,15 +280,15 @@ def extract_mask(image):
         image: PIL.Image对象
     
     Returns:
-        torch.Tensor蒙版 [1, H, W, 1] 或 None
+        torch.Tensor蒙版 [1, H, W] - ComfyUI标准mask格式
     """
     if image.mode == 'RGBA':
         alpha = image.split()[-1]
         mask_np = np.array(alpha).astype(np.float32) / 255.0
-        mask = torch.from_numpy(mask_np).unsqueeze(0).unsqueeze(-1)
+        mask = torch.from_numpy(mask_np).unsqueeze(0)
         return mask
     else:
         # 创建全白的mask
         mask_np = np.ones((image.height, image.width), dtype=np.float32)
-        mask = torch.from_numpy(mask_np).unsqueeze(0).unsqueeze(-1)
+        mask = torch.from_numpy(mask_np).unsqueeze(0)
         return mask
