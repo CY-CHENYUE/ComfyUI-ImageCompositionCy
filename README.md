@@ -1,5 +1,7 @@
 # ComfyUI-ImageCompositionCy
 
+中文 | [English](./README_EN.md)
+
 一个强大的ComfyUI多图实时合成节点，支持在交互式Canvas画布上自由调整图片位置、大小和旋转角度，并支持自由绘画功能，实时预览合成效果。
 
 ## ✨ 主要特性
