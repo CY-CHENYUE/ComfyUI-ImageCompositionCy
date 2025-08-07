@@ -636,7 +636,7 @@ class CanvasEditor {
     
     // 图层操作
     bringToFront() {
-        if (this.selectedImage) {
+        if (this.selectedImage && !this.selectedImage.isBackground) {
             const index = this.images.indexOf(this.selectedImage);
             if (index > -1) {
                 this.images.splice(index, 1);
@@ -648,11 +648,14 @@ class CanvasEditor {
     }
     
     sendToBack() {
-        if (this.selectedImage) {
+        if (this.selectedImage && !this.selectedImage.isBackground) {
             const index = this.images.indexOf(this.selectedImage);
             if (index > -1) {
                 this.images.splice(index, 1);
-                this.images.unshift(this.selectedImage);
+                // 如果有背景图，插入到索引1；否则插入到索引0
+                const hasBackground = this.images[0]?.isBackground;
+                const insertIndex = hasBackground ? 1 : 0;
+                this.images.splice(insertIndex, 0, this.selectedImage);
                 this.renderComposite();
                 this.updateNodeData();
             }
@@ -660,20 +663,26 @@ class CanvasEditor {
     }
     
     bringForward() {
-        if (this.selectedImage) {
+        if (this.selectedImage && !this.selectedImage.isBackground) {
             const index = this.images.indexOf(this.selectedImage);
             if (index > -1 && index < this.images.length - 1) {
-                [this.images[index], this.images[index + 1]] = [this.images[index + 1], this.images[index]];
-                this.renderComposite();
-                this.updateNodeData();
+                // 确保不会与背景图交换
+                const nextImage = this.images[index + 1];
+                if (!nextImage?.isBackground) {
+                    [this.images[index], this.images[index + 1]] = [this.images[index + 1], this.images[index]];
+                    this.renderComposite();
+                    this.updateNodeData();
+                }
             }
         }
     }
     
     sendBackward() {
-        if (this.selectedImage) {
+        if (this.selectedImage && !this.selectedImage.isBackground) {
             const index = this.images.indexOf(this.selectedImage);
-            if (index > 0) {
+            // 确保不会移动到背景图下面
+            const minIndex = this.images[0]?.isBackground ? 1 : 0;
+            if (index > minIndex) {
                 [this.images[index], this.images[index - 1]] = [this.images[index - 1], this.images[index]];
                 this.renderComposite();
                 this.updateNodeData();
