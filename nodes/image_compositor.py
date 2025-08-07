@@ -77,8 +77,8 @@ class ImageCompositor:
             if bg_img.mode != 'RGBA':
                 bg_img = bg_img.convert('RGBA')
             
-            # 前端Canvas显示尺寸固定为512x512
-            canvas_display_size = 512
+            # 前端Canvas显示尺寸固定为1024x1024
+            canvas_display_size = 1024
             
             # 计算前端显示时的contain模式缩放（仅用于计算坐标转换）
             bg_aspect = bg_img.width / bg_img.height

@@ -21,13 +21,23 @@ class CanvasEditor {
         this.ctx = canvas.getContext('2d');
         this.node = node;
         
+        // 获取设备像素比
+        this.dpr = window.devicePixelRatio || 1;
+        
+        // 设置初始缩放，支持高DPI
+        this.ctx.scale(this.dpr, this.dpr);
+        
+        // 设置高质量图像渲染
+        this.ctx.imageSmoothingEnabled = true;
+        this.ctx.imageSmoothingQuality = 'high';
+        
         // 图片管理
         this.images = [];
         this.selectedImage = null;
         this.selectedImages = new Set();
         
         // Canvas尺寸管理
-        this.maxCanvasSize = 512;  // Canvas最大显示尺寸
+        this.maxCanvasSize = 1024;  // Canvas最大显示尺寸，进一步提高分辨率获得最佳清晰度
         
         // 交互状态
         this.isDragging = false;
@@ -75,9 +85,11 @@ class CanvasEditor {
         const x = e.clientX - rect.left;
         const y = e.clientY - rect.top;
         
-        // 按比例转换坐标
-        const scaleX = this.canvas.width / rect.width;
-        const scaleY = this.canvas.height / rect.height;
+        // 转换为逻辑坐标（考虑CSS缩放但不包含DPR）
+        const logicalWidth = this.canvas.width / this.dpr;
+        const logicalHeight = this.canvas.height / this.dpr;
+        const scaleX = logicalWidth / rect.width;
+        const scaleY = logicalHeight / rect.height;
         
         return {
             x: x * scaleX,
@@ -118,7 +130,7 @@ class CanvasEditor {
         if (!this.selectedImage) return null;
         
         const handles = this.getHandles(this.selectedImage);
-        const handleSize = 8;
+        const handleSize = 12;  // 增加检测范围，让控制点更容易被点击
         
         for (const [type, pos] of Object.entries(handles)) {
             const dist = Math.sqrt(Math.pow(x - pos.x, 2) + Math.pow(y - pos.y, 2));
@@ -281,8 +293,10 @@ class CanvasEditor {
             newY = Math.max(minY, Math.min(maxY, newY));
         } else {
             // 如果没有背景图，限制在画布范围内
-            newX = Math.max(0, Math.min(this.canvas.width - this.selectedImage.width, newX));
-            newY = Math.max(0, Math.min(this.canvas.height - this.selectedImage.height, newY));
+            const logicalWidth = this.canvas.width / this.dpr;
+            const logicalHeight = this.canvas.height / this.dpr;
+            newX = Math.max(0, Math.min(logicalWidth - this.selectedImage.width, newX));
+            newY = Math.max(0, Math.min(logicalHeight - this.selectedImage.height, newY));
         }
         
         // 批量移动选中的图片
@@ -776,8 +790,8 @@ class CanvasEditor {
     }
     
     renderComposite() {
-        // 清空画布
-        this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        // 清空画布（使用逻辑尺寸）
+        this.ctx.clearRect(0, 0, this.canvas.width / this.dpr, this.canvas.height / this.dpr);
         
         // 绘制棋盘格背景（表示透明）
         this.drawCheckerboard();
@@ -820,19 +834,24 @@ class CanvasEditor {
             this.ctx.fillStyle = '#666';
             this.ctx.font = '14px Arial';
             this.ctx.textAlign = 'center';
-            this.ctx.fillText('连接图片即可实时预览合成效果', this.canvas.width / 2, this.canvas.height / 2);
+            const logicalWidth = this.canvas.width / this.dpr;
+            const logicalHeight = this.canvas.height / this.dpr;
+            this.ctx.fillText('连接图片即可实时预览合成效果', logicalWidth / 2, logicalHeight / 2);
         }
     }
     
     drawCheckerboard() {
         // 绘制棋盘格背景表示透明区域
         const tileSize = 10;
+        const logicalWidth = this.canvas.width / this.dpr;
+        const logicalHeight = this.canvas.height / this.dpr;
+        
         this.ctx.fillStyle = '#2a2a2a';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        this.ctx.fillRect(0, 0, logicalWidth, logicalHeight);
         
         this.ctx.fillStyle = '#1e1e1e';
-        for (let y = 0; y < this.canvas.height; y += tileSize) {
-            for (let x = 0; x < this.canvas.width; x += tileSize) {
+        for (let y = 0; y < logicalHeight; y += tileSize) {
+            for (let x = 0; x < logicalWidth; x += tileSize) {
                 if ((x / tileSize + y / tileSize) % 2 === 0) {
                     this.ctx.fillRect(x, y, tileSize, tileSize);
                 }
@@ -868,7 +887,7 @@ class CanvasEditor {
     
     drawHandles(img) {
         const handles = this.getHandles(img);
-        const handleSize = 6;
+        const handleSize = 8;  // 增大控制点显示尺寸
         
         // 绘制缩放控制点
         Object.entries(handles).forEach(([type, pos]) => {
@@ -933,17 +952,19 @@ class CanvasEditor {
                     if (index === 0) {
                         // 背景图：以contain模式重新计算
                         const bgAspect = img.naturalWidth / img.naturalHeight;
-                        const canvasAspect = this.canvas.width / this.canvas.height;
+                        const logicalWidth = this.canvas.width / this.dpr;
+                        const logicalHeight = this.canvas.height / this.dpr;
+                        const canvasAspect = logicalWidth / logicalHeight;
                         
                         if (bgAspect > canvasAspect) {
-                            existing.width = this.canvas.width;
-                            existing.height = this.canvas.width / bgAspect;
+                            existing.width = logicalWidth;
+                            existing.height = logicalWidth / bgAspect;
                             existing.x = 0;
-                            existing.y = (this.canvas.height - existing.height) / 2;
+                            existing.y = (logicalHeight - existing.height) / 2;
                         } else {
-                            existing.height = this.canvas.height;
-                            existing.width = this.canvas.height * bgAspect;
-                            existing.x = (this.canvas.width - existing.width) / 2;
+                            existing.height = logicalHeight;
+                            existing.width = logicalHeight * bgAspect;
+                            existing.x = (logicalWidth - existing.width) / 2;
                             existing.y = 0;
                         }
                     } else {
@@ -974,20 +995,22 @@ class CanvasEditor {
             if (index === 0) {
                 // 背景图：以contain模式显示（完整显示，保持比例）
                 const bgAspect = img.naturalWidth / img.naturalHeight;
-                const canvasAspect = this.canvas.width / this.canvas.height;
+                const logicalWidth = this.canvas.width / this.dpr;
+                const logicalHeight = this.canvas.height / this.dpr;
+                const canvasAspect = logicalWidth / logicalHeight;
                 
                 let displayWidth, displayHeight, offsetX = 0, offsetY = 0;
                 
                 if (bgAspect > canvasAspect) {
                     // 背景图更宽，按宽度缩放
-                    displayWidth = this.canvas.width;
-                    displayHeight = this.canvas.width / bgAspect;
-                    offsetY = (this.canvas.height - displayHeight) / 2;
+                    displayWidth = logicalWidth;
+                    displayHeight = logicalWidth / bgAspect;
+                    offsetY = (logicalHeight - displayHeight) / 2;
                 } else {
                     // 背景图更高，按高度缩放
-                    displayHeight = this.canvas.height;
-                    displayWidth = this.canvas.height * bgAspect;
-                    offsetX = (this.canvas.width - displayWidth) / 2;
+                    displayHeight = logicalHeight;
+                    displayWidth = logicalHeight * bgAspect;
+                    offsetX = (logicalWidth - displayWidth) / 2;
                 }
                 
                 imageData = {
@@ -1019,8 +1042,10 @@ class CanvasEditor {
                     baseY = bgImage.y;
                 } else {
                     // 如果没有背景图，使用画布范围
-                    maxWidth = this.canvas.width * 0.8;
-                    maxHeight = this.canvas.height * 0.8;
+                    const logicalWidth = this.canvas.width / this.dpr;
+                    const logicalHeight = this.canvas.height / this.dpr;
+                    maxWidth = logicalWidth * 0.8;
+                    maxHeight = logicalHeight * 0.8;
                     baseX = 0;
                     baseY = 0;
                 }
@@ -1036,8 +1061,10 @@ class CanvasEditor {
                 
                 // 计算居中位置，带有偏移以区分多个图片
                 const offset = (index - 1) * 20;
-                const centerX = baseX + (bgImage ? bgImage.width : this.canvas.width) / 2;
-                const centerY = baseY + (bgImage ? bgImage.height : this.canvas.height) / 2;
+                const logicalWidth = this.canvas.width / this.dpr;
+                const logicalHeight = this.canvas.height / this.dpr;
+                const centerX = baseX + (bgImage ? bgImage.width : logicalWidth) / 2;
+                const centerY = baseY + (bgImage ? bgImage.height : logicalHeight) / 2;
                 const x = centerX - displayWidth / 2 + offset;
                 const y = centerY - displayHeight / 2 + offset;
                 
@@ -1146,11 +1173,18 @@ class CanvasEditor {
             canvasHeight = Math.round(height * scale);
         }
         
-        // 设置Canvas尺寸
-        this.canvas.width = canvasWidth;
-        this.canvas.height = canvasHeight;
+        // 设置Canvas的实际分辨率（考虑高DPI）
+        this.canvas.width = canvasWidth * this.dpr;
+        this.canvas.height = canvasHeight * this.dpr;
         
-        console.log(`[CanvasEditor] Canvas size: ${canvasWidth}x${canvasHeight} (original: ${width}x${height})`);
+        // 重新设置缩放
+        this.ctx.scale(this.dpr, this.dpr);
+        
+        // 重新设置图像质量
+        this.ctx.imageSmoothingEnabled = true;
+        this.ctx.imageSmoothingQuality = 'high';
+        
+        console.log(`[CanvasEditor] Canvas size: ${canvasWidth}x${canvasHeight} (actual: ${this.canvas.width}x${this.canvas.height}, dpr: ${this.dpr})`);
         
         this.renderComposite();
         this.updateNodeData();
@@ -1241,8 +1275,8 @@ app.registerExtension({
                         // 记录当前连接的图片源
                         const connectedSources = new Set();
                     
-                    // Canvas显示尺寸固定为512x512
-                    this.canvasEditor.resizeCanvas(512, 512);
+                    // Canvas显示尺寸固定为1024x1024，最大化清晰度
+                    this.canvasEditor.resizeCanvas(1024, 1024);
                     
                     // 检查背景图输入
                     const bgInput = this.inputs?.find(input => input.name === "background_image");
@@ -1320,15 +1354,25 @@ app.registerExtension({
                     
                     // 创建Canvas元素
                     const canvasEl = document.createElement("canvas");
-                    canvasEl.width = 512;
-                    canvasEl.height = 512;
+                    
+                    // 获取设备像素比，支持高DPI显示
+                    const dpr = window.devicePixelRatio || 1;
+                    const displaySize = 1024;  // 进一步提高基础分辨率获得最佳清晰度
+                    
+                    // 设置Canvas的实际分辨率（考虑高DPI）
+                    canvasEl.width = displaySize * dpr;
+                    canvasEl.height = displaySize * dpr;
+                    
+                    // CSS显示尺寸
                     canvasEl.style.width = "100%";
                     canvasEl.style.height = "auto";
                     canvasEl.style.display = "block";
                     canvasEl.style.background = "#1e1e1e";
                     canvasEl.style.border = "1px solid #444";
                     canvasEl.style.borderRadius = "4px";
-                    canvasEl.style.imageRendering = "pixelated";
+                    // 使用高质量渲染
+                    canvasEl.style.imageRendering = "high-quality";
+                    canvasEl.style.willChange = "transform";  // 启用GPU加速
                     
                     // 使用addDOMWidget添加Canvas
                     console.log("[ImageCompositor] Adding Canvas widget");
@@ -1340,7 +1384,7 @@ app.registerExtension({
                     
                     // 初始化Canvas编辑器
                     node.canvasEditor = new CanvasEditor(canvasEl, node);
-                    console.log("[ImageCompositor] Canvas editor initialized");
+                    console.log(`[ImageCompositor] Canvas initialized - Display: ${displaySize}x${displaySize}, Actual: ${canvasEl.width}x${canvasEl.height}, DPR: ${dpr}`);
                     
                     // 设置节点最小尺寸
                     // 设置为700，提供适当的空间
