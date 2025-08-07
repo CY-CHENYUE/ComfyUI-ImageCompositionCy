@@ -15,20 +15,6 @@ class ImageCompositor:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "canvas_width": ("INT", {
-                    "default": 1024,
-                    "min": 64,
-                    "max": 4096,
-                    "step": 64,
-                    "display": "number"
-                }),
-                "canvas_height": ("INT", {
-                    "default": 1024,
-                    "min": 64,
-                    "max": 4096,
-                    "step": 64,
-                    "display": "number"
-                }),
                 "composition_data": ("STRING", {
                     "default": json.dumps({
                         "images": [],
@@ -62,7 +48,7 @@ class ImageCompositor:
     CATEGORY = "CY-ImageComposition"
     OUTPUT_NODE = True  # 允许节点输出预览
     
-    def composite_images(self, canvas_width, canvas_height, composition_data, background_image=None, unique_id=None, **kwargs):
+    def composite_images(self, composition_data, background_image=None, unique_id=None, **kwargs):
         """
         Composite multiple images based on Canvas data
         """
@@ -91,24 +77,26 @@ class ImageCompositor:
             if bg_img.mode != 'RGBA':
                 bg_img = bg_img.convert('RGBA')
             
+            # 前端Canvas显示尺寸固定为512x512
+            canvas_display_size = 512
+            
             # 计算前端显示时的contain模式缩放（仅用于计算坐标转换）
             bg_aspect = bg_img.width / bg_img.height
-            canvas_aspect = canvas_width / canvas_height
             
-            if bg_aspect > canvas_aspect:
+            if bg_aspect > 1.0:
                 # 背景图更宽，按宽度缩放
-                display_width = canvas_width
-                display_height = canvas_width / bg_aspect
+                display_width = canvas_display_size
+                display_height = canvas_display_size / bg_aspect
                 display_scale = display_width / bg_img.width
             else:
-                # 背景图更高，按高度缩放
-                display_height = canvas_height
-                display_width = canvas_height * bg_aspect
+                # 背景图更高或正方形，按高度缩放
+                display_height = canvas_display_size
+                display_width = canvas_display_size * bg_aspect
                 display_scale = display_height / bg_img.height
             
             # 计算前端显示位置
-            x_offset = (canvas_width - display_width) / 2
-            y_offset = (canvas_height - display_height) / 2
+            x_offset = (canvas_display_size - display_width) / 2
+            y_offset = (canvas_display_size - display_height) / 2
             
             # 记录显示位置和缩放比例
             display_bounds = {
@@ -129,8 +117,8 @@ class ImageCompositor:
             bg_filename = image_utils.save_temp_image(bg_img, "bg")
             preview_images.append({"image": bg_filename, "type": "background"})
         else:
-            # 如果没有背景图，使用原始画布大小
-            canvas = image_utils.create_canvas(canvas_width, canvas_height, "transparent")
+            # 如果没有背景图，使用默认大小1024x1024
+            canvas = image_utils.create_canvas(1024, 1024, "transparent")
         
         # 收集叠加图片
         overlay_images = []
@@ -204,8 +192,7 @@ class ImageCompositor:
         
         # 准备UI更新数据
         ui_data = {
-            "images": preview_images,
-            "canvas_size": [canvas_width, canvas_height]  # 传递画布尺寸给前端
+            "images": preview_images
         }
         
         return {

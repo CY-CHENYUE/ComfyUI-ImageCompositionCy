@@ -1241,14 +1241,8 @@ app.registerExtension({
                         // 记录当前连接的图片源
                         const connectedSources = new Set();
                     
-                    // 获取画布尺寸
-                    const widthWidget = this.widgets?.find(w => w.name === "canvas_width");
-                    const heightWidget = this.widgets?.find(w => w.name === "canvas_height");
-                    if (widthWidget && heightWidget) {
-                        const width = widthWidget.value;
-                        const height = heightWidget.value;
-                        this.canvasEditor.resizeCanvas(width, height);
-                    }
+                    // Canvas显示尺寸固定为512x512
+                    this.canvasEditor.resizeCanvas(512, 512);
                     
                     // 检查背景图输入
                     const bgInput = this.inputs?.find(input => input.name === "background_image");
@@ -1349,8 +1343,26 @@ app.registerExtension({
                     console.log("[ImageCompositor] Canvas editor initialized");
                     
                     // 设置节点最小尺寸
+                    // 设置为700，提供适当的空间
                     node.size[0] = Math.max(node.size[0], 420);
-                    node.size[1] = Math.max(node.size[1], 450);
+                    node.size[1] = Math.max(node.size[1], 700);
+                    
+                    // 设置最小高度，防止用户调整得太小
+                    node.minHeight = 700;
+                    node.minWidth = 420;
+                    
+                    // 重写onResize回调，强制执行最小尺寸
+                    const originalOnResize = node.onResize;
+                    node.onResize = function(size) {
+                        // 强制执行最小尺寸
+                        if (size[0] < 420) size[0] = 420;
+                        if (size[1] < 700) size[1] = 700;
+                        
+                        // 调用原始的onResize（如果存在）
+                        if (originalOnResize) {
+                            originalOnResize.call(this, size);
+                        }
+                    };
                     
                     // 初始化完成后，检查是否已有连接的输入
                     setTimeout(() => {
@@ -1372,14 +1384,6 @@ app.registerExtension({
                 
                 // onExecuted只处理运行后的结果更新，不处理实时预览
                 // 实时预览由onConnectionsChange和updateCanvasFromInputs处理
-                
-                // 如果有运行结果，更新画布尺寸
-                if (message && message.canvas_size) {
-                    const [width, height] = message.canvas_size;
-                    console.log(`[ImageCompositor] Workflow executed - canvas size: ${width}x${height}`);
-                    // 运行后可能需要更新画布尺寸
-                    this.canvasEditor.resizeCanvas(width, height);
-                }
             });
         }
     }
