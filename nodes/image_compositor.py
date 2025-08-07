@@ -48,7 +48,7 @@ class ImageCompositor:
     RETURN_TYPES = ("IMAGE", "MASK")
     RETURN_NAMES = ("composite", "mask")
     FUNCTION = "composite_images"
-    CATEGORY = "CY-ImageComposition"
+    CATEGORY = "ImageCompositionCy"
     OUTPUT_NODE = True  # 允许节点输出预览
     
     def composite_images(self, input_count, composition_data, background_image=None, unique_id=None, **kwargs):

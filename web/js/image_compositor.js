@@ -1596,15 +1596,34 @@ class CanvasEditor {
             if (bgImage) {
                 tempCanvas.width = bgImage.originalWidth;
                 tempCanvas.height = bgImage.originalHeight;
+                
+                // 计算背景图的显示缩放比例和偏移
+                const displayScale = bgImage.width / bgImage.originalWidth;
+                const offsetX = bgImage.x;
+                const offsetY = bgImage.y;
+                
+                // 绘制绘画层内容，考虑背景图的偏移和缩放
+                // 1. 先将坐标系移动到背景图的原点
+                // 2. 然后应用缩放
+                const sourceX = offsetX * this.dpr;  // 源区域的起始X（考虑DPR）
+                const sourceY = offsetY * this.dpr;  // 源区域的起始Y（考虑DPR）
+                const sourceWidth = bgImage.width * this.dpr;  // 源区域的宽度（考虑DPR）
+                const sourceHeight = bgImage.height * this.dpr;  // 源区域的高度（考虑DPR）
+                
+                // 从绘画画布的背景图区域复制到输出画布
+                tempCtx.drawImage(
+                    this.drawingCanvas, 
+                    sourceX, sourceY, sourceWidth, sourceHeight,  // 源区域（背景图在画布上的位置）
+                    0, 0, bgImage.originalWidth, bgImage.originalHeight  // 目标区域（输出画布的完整区域）
+                );
             } else {
                 tempCanvas.width = 1024;
                 tempCanvas.height = 1024;
+                // 没有背景图时，直接缩放整个绘画层
+                const scale = 1024 / (this.drawingCanvas.width / this.dpr);
+                tempCtx.scale(scale, scale);
+                tempCtx.drawImage(this.drawingCanvas, 0, 0, this.drawingCanvas.width / this.dpr, this.drawingCanvas.height / this.dpr);
             }
-            
-            // 绘制绘画层内容（需要缩放以匹配输出尺寸）
-            const scale = bgImage ? bgImage.originalWidth / (this.drawingCanvas.width / this.dpr) : 1;
-            tempCtx.scale(scale, scale);
-            tempCtx.drawImage(this.drawingCanvas, 0, 0, this.drawingCanvas.width / this.dpr, this.drawingCanvas.height / this.dpr);
             
             // 转换为base64
             drawingData = tempCanvas.toDataURL('image/png');

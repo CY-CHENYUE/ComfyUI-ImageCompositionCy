@@ -1,5 +1,5 @@
 """
-ComfyUI-ImageCompositionCY
+ComfyUI-ImageCompositionCy
 图像合成节点集合
 """
 
