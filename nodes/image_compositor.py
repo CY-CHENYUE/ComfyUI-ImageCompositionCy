@@ -13,8 +13,15 @@ class ImageCompositor:
     
     @classmethod
     def INPUT_TYPES(cls):
-        return {
+        inputs = {
             "required": {
+                "input_count": ("INT", {
+                    "default": 3,
+                    "min": 1,
+                    "max": 20,
+                    "step": 1,
+                    "display": "number"
+                }),
                 "composition_data": ("STRING", {
                     "default": json.dumps({
                         "images": [],
@@ -26,21 +33,17 @@ class ImageCompositor:
             },
             "optional": {
                 "background_image": ("IMAGE",),
-                "overlay_image_1": ("IMAGE",),
-                "overlay_image_2": ("IMAGE",),
-                "overlay_image_3": ("IMAGE",),
-                "overlay_image_4": ("IMAGE",),
-                "overlay_image_5": ("IMAGE",),
-                "overlay_image_6": ("IMAGE",),
-                "overlay_image_7": ("IMAGE",),
-                "overlay_image_8": ("IMAGE",),
-                "overlay_image_9": ("IMAGE",),
-                "overlay_image_10": ("IMAGE",),
             },
             "hidden": {
                 "unique_id": "UNIQUE_ID",
             }
         }
+        
+        # 动态添加overlay_image输入（默认3个）
+        for i in range(1, 4):
+            inputs["optional"][f"overlay_image_{i}"] = ("IMAGE",)
+        
+        return inputs
     
     RETURN_TYPES = ("IMAGE", "MASK")
     RETURN_NAMES = ("composite", "mask")
@@ -48,7 +51,7 @@ class ImageCompositor:
     CATEGORY = "CY-ImageComposition"
     OUTPUT_NODE = True  # 允许节点输出预览
     
-    def composite_images(self, composition_data, background_image=None, unique_id=None, **kwargs):
+    def composite_images(self, input_count, composition_data, background_image=None, unique_id=None, **kwargs):
         """
         Composite multiple images based on Canvas data
         """
@@ -120,9 +123,9 @@ class ImageCompositor:
             # 如果没有背景图，使用默认大小1024x1024
             canvas = image_utils.create_canvas(1024, 1024, "transparent")
         
-        # 收集叠加图片
+        # 收集叠加图片（基于input_count），保留None占位以维持索引对应关系
         overlay_images = []
-        for i in range(1, 11):
+        for i in range(1, input_count + 1):
             img_key = f"overlay_image_{i}"
             if img_key in kwargs and kwargs[img_key] is not None:
                 img = image_utils.tensor_to_pil(kwargs[img_key])
@@ -133,6 +136,9 @@ class ImageCompositor:
                 # 保存输入图片预览
                 img_filename = image_utils.save_temp_image(img, f"input_{i}")
                 preview_images.append({"image": img_filename, "type": f"input_{i}"})
+            else:
+                # 保留None占位，确保索引对应
+                overlay_images.append(None)
         
         # 执行图片合成（将叠加图片合成到画布上）
         # 过滤出非背景图的配置

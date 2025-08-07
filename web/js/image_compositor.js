@@ -548,6 +548,26 @@ class CanvasEditor {
             e.preventDefault();
             this.nudgeSelected(key);
         }
+        
+        // 图层调整快捷键
+        else if (key === '[' || key === ']') {
+            e.preventDefault();
+            if (e.shiftKey) {
+                // Shift + [ 移到最底层, Shift + ] 移到最顶层
+                if (key === '[') {
+                    this.sendToBack();
+                } else {
+                    this.bringToFront();
+                }
+            } else {
+                // [ 下移一层, ] 上移一层
+                if (key === '[') {
+                    this.sendBackward();
+                } else {
+                    this.bringForward();
+                }
+            }
+        }
     }
     
     showContextMenu(e) {
@@ -875,6 +895,33 @@ class CanvasEditor {
         this.ctx.strokeStyle = img === this.selectedImage ? '#00ff00' : '#00aa00';
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(img.x, img.y, img.width, img.height);
+        
+        // 显示图层编号
+        const layerIndex = this.images.indexOf(img) + 1;
+        const totalLayers = this.images.length;
+        this.ctx.fillStyle = '#00ff00';
+        this.ctx.font = 'bold 12px Arial';
+        this.ctx.textAlign = 'left';
+        this.ctx.textBaseline = 'top';
+        
+        // 在左上角显示图层信息
+        const layerText = `Layer ${layerIndex}/${totalLayers}`;
+        const textPadding = 4;
+        const textMetrics = this.ctx.measureText(layerText);
+        const textHeight = 12;
+        
+        // 绘制背景
+        this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+        this.ctx.fillRect(
+            img.x - 1,
+            img.y - textHeight - textPadding * 2 - 1,
+            textMetrics.width + textPadding * 2,
+            textHeight + textPadding * 2
+        );
+        
+        // 绘制文字
+        this.ctx.fillStyle = '#00ff00';
+        this.ctx.fillText(layerText, img.x + textPadding - 1, img.y - textHeight - textPadding - 1);
         
         // 只为主选中图片绘制控制点
         if (img === this.selectedImage) {
@@ -1231,6 +1278,63 @@ app.registerExtension({
                 node.updateDebounceTimer = null;
                 node.isUpdating = false;
                 
+                // 动态输入管理
+                node.updateInputs = function() {
+                    const inputCountWidget = this.widgets?.find(w => w.name === "input_count");
+                    if (!inputCountWidget) return;
+                    
+                    const targetCount = inputCountWidget.value;
+                    let currentCount = 0;
+                    
+                    // 计算当前overlay_image输入数量
+                    this.inputs?.forEach(input => {
+                        if (input.name && input.name.startsWith("overlay_image_")) {
+                            currentCount++;
+                        }
+                    });
+                    
+                    console.log(`[ImageCompositor] Updating inputs: current=${currentCount}, target=${targetCount}`);
+                    
+                    // 添加输入
+                    while (currentCount < targetCount) {
+                        currentCount++;
+                        this.addInput(`overlay_image_${currentCount}`, "IMAGE");
+                    }
+                    
+                    // 移除输入
+                    while (currentCount > targetCount) {
+                        const inputToRemove = this.inputs?.findIndex(
+                            input => input.name === `overlay_image_${currentCount}`
+                        );
+                        if (inputToRemove >= 0) {
+                            this.removeInput(inputToRemove);
+                        }
+                        currentCount--;
+                    }
+                    
+                    // 动态调整节点高度
+                    // 基础高度（包含Canvas 420px + input_count widget 30px + padding）
+                    const canvasHeight = 420;  // Canvas在节点内的显示高度
+                    const widgetHeight = 30;   // input_count widget的高度
+                    const inputHeight = 30;    // 每个输入槽的高度
+                    const padding = 20;        // 额外padding
+                    
+                    // 计算总高度
+                    const newHeight = canvasHeight + widgetHeight + (targetCount * inputHeight) + padding;
+                    
+                    // 设置新的节点大小
+                    this.size[0] = Math.max(this.size[0], 420);
+                    this.size[1] = newHeight;
+                    
+                    // 更新最小高度
+                    this.minHeight = newHeight;
+                    
+                    // 触发大小更新
+                    if (this.graph) {
+                        this.graph.setDirtyCanvas(true, true);
+                    }
+                };
+                
                 // 监听连接变化，实现实时预览
                 chainCallback(node, "onConnectionsChange", function(type, index, connected, link_info) {
                     console.log(`[ImageCompositor] Connection change - type: ${type}, index: ${index}, connected: ${connected}`);
@@ -1295,8 +1399,11 @@ app.registerExtension({
                         }
                     }
                     
-                    // 检查叠加图片输入
-                    for (let i = 1; i <= 10; i++) {
+                    // 检查叠加图片输入（动态数量）
+                    const inputCountWidget = this.widgets?.find(w => w.name === "input_count");
+                    const maxInputs = inputCountWidget ? inputCountWidget.value : 3;
+                    
+                    for (let i = 1; i <= maxInputs; i++) {
                         const inputName = `overlay_image_${i}`;
                         const input = this.inputs?.find(inp => inp.name === inputName);
                         if (input && input.link !== null) {
@@ -1352,6 +1459,31 @@ app.registerExtension({
                         hideWidgetForGood(node, compositionWidget);
                     }
                     
+                    // 监听input_count变化
+                    const inputCountWidget = node.widgets?.find(w => w.name === "input_count");
+                    if (inputCountWidget) {
+                        // 保存原始的callback
+                        const originalCallback = inputCountWidget.callback;
+                        
+                        // 添加新的callback
+                        inputCountWidget.callback = function(value) {
+                            console.log(`[ImageCompositor] Input count changed to: ${value}`);
+                            
+                            // 调用原始callback
+                            if (originalCallback) {
+                                originalCallback.call(this, value);
+                            }
+                            
+                            // 更新输入
+                            setTimeout(() => {
+                                node.updateInputs();
+                            }, 100);
+                        };
+                        
+                        // 初始化输入
+                        node.updateInputs();
+                    }
+                    
                     // 创建Canvas元素
                     const canvasEl = document.createElement("canvas");
                     
@@ -1386,21 +1518,20 @@ app.registerExtension({
                     node.canvasEditor = new CanvasEditor(canvasEl, node);
                     console.log(`[ImageCompositor] Canvas initialized - Display: ${displaySize}x${displaySize}, Actual: ${canvasEl.width}x${canvasEl.height}, DPR: ${dpr}`);
                     
-                    // 设置节点最小尺寸
-                    // 设置为700，提供适当的空间
+                    // 初始设置节点尺寸（暂时使用固定值，稍后会根据input_count调整）
                     node.size[0] = Math.max(node.size[0], 420);
                     node.size[1] = Math.max(node.size[1], 700);
                     
-                    // 设置最小高度，防止用户调整得太小
+                    // 设置最小高度和宽度（稍后会动态更新）
                     node.minHeight = 700;
                     node.minWidth = 420;
                     
                     // 重写onResize回调，强制执行最小尺寸
                     const originalOnResize = node.onResize;
                     node.onResize = function(size) {
-                        // 强制执行最小尺寸
-                        if (size[0] < 420) size[0] = 420;
-                        if (size[1] < 700) size[1] = 700;
+                        // 强制执行最小尺寸（使用动态计算的minHeight）
+                        if (size[0] < this.minWidth) size[0] = this.minWidth;
+                        if (size[1] < this.minHeight) size[1] = this.minHeight;
                         
                         // 调用原始的onResize（如果存在）
                         if (originalOnResize) {

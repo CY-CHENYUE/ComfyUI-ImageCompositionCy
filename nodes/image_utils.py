@@ -146,6 +146,10 @@ def composite_images(canvas, overlay_images, images_config):
         if 0 <= img_index < len(overlay_images):
             img = overlay_images[img_index]
             
+            # 跳过None图片（空输入）
+            if img is None:
+                continue
+            
             # 应用变换
             transformed_img, pos = apply_transform(img, img_config)
             
