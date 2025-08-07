@@ -65,6 +65,7 @@ class ImageCompositor:
             }
         
         images_config = config.get("images", [])
+        drawing_layer_data = config.get("drawingLayer", None)
         
         # 收集输入图片预览数据（用于前端显示）
         preview_images = []
@@ -191,6 +192,35 @@ class ImageCompositor:
         else:
             # 前端已经处理了坐标转换，直接使用
             canvas = image_utils.composite_images(canvas, overlay_images, overlay_configs)
+        
+        # 处理绘画层（在所有图片合成之后）
+        if drawing_layer_data:
+            try:
+                # 解析base64数据
+                import base64
+                import io
+                
+                # 移除data:image/png;base64,前缀
+                if drawing_layer_data.startswith('data:'):
+                    drawing_layer_data = drawing_layer_data.split(',')[1]
+                
+                # 解码base64
+                drawing_bytes = base64.b64decode(drawing_layer_data)
+                drawing_img = Image.open(io.BytesIO(drawing_bytes))
+                
+                # 确保是RGBA格式
+                if drawing_img.mode != 'RGBA':
+                    drawing_img = drawing_img.convert('RGBA')
+                
+                # 调整绘画层大小以匹配画布
+                if drawing_img.size != canvas.size:
+                    drawing_img = drawing_img.resize(canvas.size, Image.Resampling.LANCZOS)
+                
+                # 将绘画层合成到画布上
+                canvas = Image.alpha_composite(canvas, drawing_img)
+                
+            except Exception as e:
+                print(f"[ImageCompositor] 处理绘画层失败: {e}")
         
         # 转换结果
         result = image_utils.pil_to_tensor(canvas)

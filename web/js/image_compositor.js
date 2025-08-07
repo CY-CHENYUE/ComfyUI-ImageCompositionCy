@@ -49,15 +49,31 @@ class CanvasEditor {
         this.dragStart = { x: 0, y: 0 };
         this.imageStart = { x: 0, y: 0, width: 0, height: 0, rotation: 0 };
         
-        // 历史记录（撤销/重做）
-        this.history = [];
-        this.historyIndex = -1;
-        this.maxHistory = 50;
-        
         // 剪贴板
         this.clipboard = null;
         
+        // 绘画模式相关
+        this.mode = 'edit';  // 'edit' or 'draw'
+        this.isDrawing = false;
+        this.drawingTool = 'brush';  // 'brush', 'eraser'
+        this.brushSize = 5;
+        this.brushColor = '#000000';
+        this.brushOpacity = 1.0;
+        this.lastDrawPos = null;
+        
+        // 创建绘画层canvas
+        this.drawingCanvas = document.createElement('canvas');
+        this.drawingCtx = this.drawingCanvas.getContext('2d');
+        this.drawingCanvas.width = this.canvas.width;
+        this.drawingCanvas.height = this.canvas.height;
+        this.drawingCtx.scale(this.dpr, this.dpr);
+        
+        // 绘画路径历史
+        this.drawingPaths = [];
+        this.currentPath = null;
+        
         this.setupEventListeners();
+        this.createDrawingToolbar();
         this.renderComposite();
     }
     
@@ -78,6 +94,346 @@ class CanvasEditor {
         // 键盘事件 - 当Canvas获得焦点时
         this.canvas.tabIndex = 1; // 允许Canvas获得焦点
         this.canvas.addEventListener('keydown', this.onKeyDown.bind(this));
+    }
+    
+    createDrawingToolbar() {
+        // 创建紧凑的浮动工具栏
+        const toolbar = document.createElement('div');
+        toolbar.className = 'canvas-drawing-toolbar';
+        toolbar.style.cssText = `
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            background: rgba(30, 30, 30, 0.85);
+            backdrop-filter: blur(10px);
+            border-radius: 8px;
+            padding: 4px;
+            z-index: 1000;
+            color: white;
+            font-size: 11px;
+            display: flex;
+            gap: 2px;
+            align-items: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+            transition: all 0.3s ease;
+        `;
+        
+        // 统一尺寸的直观SVG图标
+        const icons = {
+            // 绘画模式 - 铅笔图标
+            draw: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+            
+            // 编辑模式 - 移动十字箭头
+            edit: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+            
+            // 画笔工具 - 与绘画模式图标一致
+            brush: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+            
+            // 橡皮擦工具 - 简化的橡皮擦
+            eraser: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20H7l-4-4a1 1 0 0 1 0-1.414l10-10a1 1 0 0 1 1.414 0l6 6a1 1 0 0 1 0 1.414l-10 10z" stroke-linecap="round" stroke-linejoin="round"/><path d="M18 13l-5 5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+            
+            // 清除 - 垃圾桶
+            clear: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" stroke-linecap="round" stroke-linejoin="round"/><path d="M10 11v6M14 11v6" stroke-linecap="round"/></svg>',
+            
+            // 折叠/展开箭头
+            collapse: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>',
+            expand: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>'
+        };
+        
+        // 折叠/展开按钮
+        const collapseBtn = document.createElement('button');
+        collapseBtn.innerHTML = icons.collapse;
+        collapseBtn.title = '折叠工具栏';
+        collapseBtn.style.cssText = `
+            padding: 4px;
+            background: transparent;
+            color: #888;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            transition: all 0.2s;
+        `;
+        collapseBtn.onmouseover = () => collapseBtn.style.background = 'rgba(255,255,255,0.1)';
+        collapseBtn.onmouseout = () => collapseBtn.style.background = 'transparent';
+        toolbar.appendChild(collapseBtn);
+        this.collapseBtn = collapseBtn;
+        
+        // 工具容器（可折叠部分）
+        const toolsContainer = document.createElement('div');
+        toolsContainer.style.cssText = `
+            display: flex;
+            gap: 2px;
+            align-items: center;
+        `;
+        toolbar.appendChild(toolsContainer);
+        this.toolsContainer = toolsContainer;
+        
+        // 模式切换按钮
+        const modeBtn = document.createElement('button');
+        modeBtn.innerHTML = icons.draw;
+        modeBtn.title = '切换绘画模式 (D)';
+        modeBtn.style.cssText = `
+            padding: 5px 8px;
+            background: rgba(76, 175, 80, 0.8);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            font-size: 11px;
+            transition: all 0.2s;
+        `;
+        modeBtn.onmouseover = () => modeBtn.style.background = 'rgba(76, 175, 80, 1)';
+        modeBtn.onmouseout = () => modeBtn.style.background = this.mode === 'draw' ? 'rgba(33, 150, 243, 0.8)' : 'rgba(76, 175, 80, 0.8)';
+        modeBtn.onclick = () => this.toggleMode();
+        toolsContainer.appendChild(modeBtn);
+        this.modeButton = modeBtn;
+        
+        // 分隔符
+        const separator1 = document.createElement('div');
+        separator1.style.cssText = 'width: 1px; height: 18px; background: rgba(255,255,255,0.2);';
+        toolsContainer.appendChild(separator1);
+        this.separator1 = separator1;
+        
+        // 画笔工具
+        const brushBtn = document.createElement('button');
+        brushBtn.innerHTML = icons.brush;
+        brushBtn.title = '画笔 (B)';
+        brushBtn.style.cssText = `
+            padding: 5px;
+            background: transparent;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            transition: all 0.2s;
+        `;
+        brushBtn.onmouseover = () => {
+            if (this.drawingTool !== 'brush') brushBtn.style.background = 'rgba(255,255,255,0.1)';
+        };
+        brushBtn.onmouseout = () => brushBtn.style.background = this.drawingTool === 'brush' ? 'rgba(76, 175, 80, 0.6)' : 'transparent';
+        brushBtn.onclick = () => this.selectTool('brush');
+        toolsContainer.appendChild(brushBtn);
+        this.brushButton = brushBtn;
+        
+        // 橡皮擦工具
+        const eraserBtn = document.createElement('button');
+        eraserBtn.innerHTML = icons.eraser;
+        eraserBtn.title = '橡皮擦 (E)';
+        eraserBtn.style.cssText = `
+            padding: 5px;
+            background: transparent;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            transition: all 0.2s;
+        `;
+        eraserBtn.onmouseover = () => {
+            if (this.drawingTool !== 'eraser') eraserBtn.style.background = 'rgba(255,255,255,0.1)';
+        };
+        eraserBtn.onmouseout = () => eraserBtn.style.background = this.drawingTool === 'eraser' ? 'rgba(76, 175, 80, 0.6)' : 'transparent';
+        eraserBtn.onclick = () => this.selectTool('eraser');
+        toolsContainer.appendChild(eraserBtn);
+        this.eraserButton = eraserBtn;
+        
+        // 颜色选择器
+        const colorPicker = document.createElement('input');
+        colorPicker.type = 'color';
+        colorPicker.value = this.brushColor;
+        colorPicker.title = '选择颜色 (C)';
+        colorPicker.style.cssText = `
+            width: 24px;
+            height: 24px;
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 4px;
+            cursor: pointer;
+            padding: 0;
+            background: transparent;
+        `;
+        colorPicker.oninput = (e) => {
+            this.brushColor = e.target.value;
+        };
+        toolsContainer.appendChild(colorPicker);
+        this.colorPicker = colorPicker;
+        
+        // 画笔大小滑块
+        const sizeSlider = document.createElement('input');
+        sizeSlider.type = 'range';
+        sizeSlider.min = '1';
+        sizeSlider.max = '50';
+        sizeSlider.value = this.brushSize;
+        sizeSlider.title = `画笔大小: ${this.brushSize}`;
+        sizeSlider.style.cssText = 'width: 60px; cursor: pointer;';
+        sizeSlider.oninput = (e) => {
+            this.brushSize = parseInt(e.target.value);
+            sizeSlider.title = `画笔大小: ${this.brushSize}`;
+        };
+        toolsContainer.appendChild(sizeSlider);
+        this.sizeSlider = sizeSlider;
+        
+        // 透明度滑块
+        const opacitySlider = document.createElement('input');
+        opacitySlider.type = 'range';
+        opacitySlider.min = '0';
+        opacitySlider.max = '100';
+        opacitySlider.value = this.brushOpacity * 100;
+        opacitySlider.title = `透明度: ${Math.round(this.brushOpacity * 100)}%`;
+        opacitySlider.style.cssText = 'width: 60px; cursor: pointer;';
+        opacitySlider.oninput = (e) => {
+            this.brushOpacity = parseInt(e.target.value) / 100;
+            opacitySlider.title = `透明度: ${Math.round(this.brushOpacity * 100)}%`;
+        };
+        toolsContainer.appendChild(opacitySlider);
+        this.opacitySlider = opacitySlider;
+        
+        // 分隔符
+        const separator2 = document.createElement('div');
+        separator2.style.cssText = 'width: 1px; height: 18px; background: rgba(255,255,255,0.2);';
+        toolsContainer.appendChild(separator2);
+        
+        // 清除按钮
+        const clearBtn = document.createElement('button');
+        clearBtn.innerHTML = icons.clear;
+        clearBtn.title = '清除绘画';
+        clearBtn.style.cssText = `
+            padding: 5px;
+            background: transparent;
+            color: #f44336;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            transition: all 0.2s;
+        `;
+        clearBtn.onmouseover = () => clearBtn.style.background = 'rgba(244, 67, 54, 0.2)';
+        clearBtn.onmouseout = () => clearBtn.style.background = 'transparent';
+        clearBtn.onclick = () => this.clearDrawing();
+        toolsContainer.appendChild(clearBtn);
+        
+        // 实现折叠功能
+        this.toolbarCollapsed = false;
+        collapseBtn.onclick = () => {
+            this.toolbarCollapsed = !this.toolbarCollapsed;
+            if (this.toolbarCollapsed) {
+                toolsContainer.style.display = 'none';
+                collapseBtn.innerHTML = icons.expand;
+                collapseBtn.title = '展开工具栏';
+                toolbar.style.padding = '4px 4px 4px 8px';
+            } else {
+                toolsContainer.style.display = 'flex';
+                collapseBtn.innerHTML = icons.collapse;
+                collapseBtn.title = '折叠工具栏';
+                toolbar.style.padding = '4px';
+            }
+        };
+        
+        // 将工具栏添加到canvas的父容器（应该是我们创建的container）
+        if (this.canvas.parentElement) {
+            // 确保父容器的position是relative（虽然我们已经在创建时设置了）
+            if (!this.canvas.parentElement.style.position || this.canvas.parentElement.style.position === 'static') {
+                this.canvas.parentElement.style.position = 'relative';
+            }
+            this.canvas.parentElement.appendChild(toolbar);
+        }
+        
+        this.toolbar = toolbar;
+        
+        // 初始化工具选择状态
+        this.selectTool('brush');
+        
+        // 初始隐藏绘画工具
+        this.updateToolbarVisibility();
+    }
+    
+    toggleMode() {
+        this.mode = this.mode === 'edit' ? 'draw' : 'edit';
+        this.updateToolbarVisibility();
+        
+        // 更新模式按钮图标 - 使用统一的14x14尺寸
+        if (this.modeButton) {
+            const icons = {
+                draw: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+                edit: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+            };
+            
+            const icon = this.mode === 'draw' ? icons.edit : icons.draw;
+            this.modeButton.innerHTML = icon;
+            this.modeButton.style.background = this.mode === 'draw' ? 'rgba(33, 150, 243, 0.8)' : 'rgba(76, 175, 80, 0.8)';
+            this.modeButton.title = this.mode === 'draw' ? '切换到编辑模式 (D)' : '切换到绘画模式 (D)';
+        }
+        
+        // 切换到绘画模式时取消选择
+        if (this.mode === 'draw') {
+            this.selectedImage = null;
+            this.selectedImages.clear();
+            this.renderComposite();
+        }
+    }
+    
+    selectTool(tool) {
+        this.drawingTool = tool;
+        
+        // 更新按钮状态 - 不改变图标大小
+        if (this.brushButton) {
+            this.brushButton.style.background = tool === 'brush' ? 'rgba(76, 175, 80, 0.6)' : 'transparent';
+        }
+        if (this.eraserButton) {
+            this.eraserButton.style.background = tool === 'eraser' ? 'rgba(76, 175, 80, 0.6)' : 'transparent';
+        }
+    }
+    
+    updateToolbarVisibility() {
+        // 根据模式显示/隐藏工具
+        if (!this.toolbar) return;
+        
+        const display = this.mode === 'draw' ? '' : 'none';
+        
+        // 绘画工具和控件
+        const drawingElements = [
+            this.separator1,
+            this.brushButton,
+            this.eraserButton,
+            this.colorPicker,
+            this.sizeSlider,
+            this.opacitySlider
+        ];
+        
+        drawingElements.forEach(element => {
+            if (element) {
+                element.style.display = display;
+            }
+        });
+        
+        // 清除按钮及其分隔符
+        const clearBtn = this.toolbar.querySelector('button[title="清除绘画"]');
+        if (clearBtn) {
+            clearBtn.style.display = display;
+            if (clearBtn.previousElementSibling && clearBtn.previousElementSibling.style.cssText.includes('background')) {
+                clearBtn.previousElementSibling.style.display = display;
+            }
+        }
+        
+        // 确保初始工具选中状态
+        if (this.mode === 'draw' && !this.drawingTool) {
+            this.selectTool('brush');
+        }
+    }
+    
+    clearDrawing() {
+        // 清除绘画层
+        this.drawingCtx.clearRect(0, 0, this.drawingCanvas.width / this.dpr, this.drawingCanvas.height / this.dpr);
+        this.drawingPaths = [];
+        this.renderComposite();
+        this.updateNodeData();
     }
     
     getMousePos(e) {
@@ -186,6 +542,13 @@ class CanvasEditor {
         
         const pos = this.getMousePos(e);
         
+        // 如果在绘画模式，开始绘画
+        if (this.mode === 'draw') {
+            this.startDrawing(pos);
+            return;
+        }
+        
+        // 编辑模式的原有逻辑
         // 检查是否点击了控制点
         const handle = this.getHandleAt(pos.x, pos.y);
         if (handle) {
@@ -223,6 +586,32 @@ class CanvasEditor {
         this.renderComposite();
     }
     
+    startDrawing(pos) {
+        this.isDrawing = true;
+        this.lastDrawPos = pos;
+        
+        // 开始新的绘画路径
+        this.currentPath = {
+            tool: this.drawingTool,
+            color: this.brushColor,
+            size: this.brushSize,
+            opacity: this.brushOpacity,
+            points: [pos]
+        };
+        
+        // 设置绘画上下文
+        this.drawingCtx.globalCompositeOperation = this.drawingTool === 'eraser' ? 'destination-out' : 'source-over';
+        this.drawingCtx.globalAlpha = this.brushOpacity;
+        this.drawingCtx.strokeStyle = this.brushColor;
+        this.drawingCtx.lineWidth = this.brushSize;
+        this.drawingCtx.lineCap = 'round';
+        this.drawingCtx.lineJoin = 'round';
+        
+        // 开始路径
+        this.drawingCtx.beginPath();
+        this.drawingCtx.moveTo(pos.x, pos.y);
+    }
+    
     startDragging(pos) {
         this.isDragging = true;
         this.dragStart = pos;
@@ -230,7 +619,6 @@ class CanvasEditor {
             x: this.selectedImage.x,
             y: this.selectedImage.y
         };
-        this.saveHistory();
     }
     
     startResizing(pos, handle) {
@@ -243,7 +631,6 @@ class CanvasEditor {
             width: this.selectedImage.width,
             height: this.selectedImage.height
         };
-        this.saveHistory();
     }
     
     startRotating(pos) {
@@ -252,12 +639,19 @@ class CanvasEditor {
         this.imageStart = {
             rotation: this.selectedImage.rotation || 0
         };
-        this.saveHistory();
     }
     
     onMouseMove(e) {
         const pos = this.getMousePos(e);
         
+        // 如果在绘画模式且正在绘画
+        if (this.mode === 'draw' && this.isDrawing) {
+            e.preventDefault();
+            this.handleDrawing(pos);
+            return;
+        }
+        
+        // 编辑模式的原有逻辑
         if (this.isDragging && this.selectedImage) {
             e.preventDefault();
             this.handleDragging(pos);
@@ -271,6 +665,31 @@ class CanvasEditor {
             // 更新鼠标光标
             this.updateCursor(pos);
         }
+    }
+    
+    handleDrawing(pos) {
+        if (!this.lastDrawPos) return;
+        
+        // 使用二次贝塞尔曲线使线条更平滑
+        const midX = (this.lastDrawPos.x + pos.x) / 2;
+        const midY = (this.lastDrawPos.y + pos.y) / 2;
+        
+        this.drawingCtx.quadraticCurveTo(this.lastDrawPos.x, this.lastDrawPos.y, midX, midY);
+        this.drawingCtx.stroke();
+        
+        // 立即开始新路径以继续绘制
+        this.drawingCtx.beginPath();
+        this.drawingCtx.moveTo(midX, midY);
+        
+        // 记录点到路径
+        if (this.currentPath) {
+            this.currentPath.points.push(pos);
+        }
+        
+        this.lastDrawPos = pos;
+        
+        // 实时更新显示
+        this.renderComposite();
     }
     
     handleDragging(pos) {
@@ -453,6 +872,13 @@ class CanvasEditor {
     }
     
     updateCursor(pos) {
+        // 绘画模式下使用十字光标
+        if (this.mode === 'draw') {
+            this.canvas.style.cursor = 'crosshair';
+            return;
+        }
+        
+        // 编辑模式的原有逻辑
         const handle = this.getHandleAt(pos.x, pos.y);
         
         if (handle === HandleType.ROTATE) {
@@ -478,6 +904,13 @@ class CanvasEditor {
     }
     
     onMouseUp(e) {
+        // 如果在绘画模式且正在绘画
+        if (this.mode === 'draw' && this.isDrawing) {
+            this.endDrawing();
+            return;
+        }
+        
+        // 编辑模式的原有逻辑
         // 如果正在操作，则在结束时更新节点数据
         if (this.isDragging || this.isResizing || this.isRotating) {
             this.updateNodeData();
@@ -487,6 +920,27 @@ class CanvasEditor {
         this.isResizing = false;
         this.isRotating = false;
         this.activeHandle = null;
+    }
+    
+    endDrawing() {
+        if (this.isDrawing && this.currentPath) {
+            // 结束当前路径
+            this.drawingCtx.stroke();
+            
+            // 保存路径
+            this.drawingPaths.push(this.currentPath);
+            
+            // 限制路径数量（防止内存溢出）
+            if (this.drawingPaths.length > 100) {
+                this.drawingPaths.shift();
+            }
+            
+            this.currentPath = null;
+            this.updateNodeData();
+        }
+        
+        this.isDrawing = false;
+        this.lastDrawPos = null;
     }
     
     onDoubleClick(e) {
@@ -506,33 +960,43 @@ class CanvasEditor {
         const key = e.key.toLowerCase();
         const ctrl = e.ctrlKey || e.metaKey;
         
-        // 撤销/重做
-        if (ctrl && key === 'z') {
+        // 绘画模式快捷键
+        if (key === 'd') {
             e.preventDefault();
-            if (e.shiftKey) {
-                this.redo();
-            } else {
-                this.undo();
-            }
-        } else if (ctrl && key === 'y') {
-            e.preventDefault();
-            this.redo();
+            this.toggleMode();
         }
         
-        // 全选
-        else if (ctrl && key === 'a') {
+        // 绘画工具快捷键（仅在绘画模式下）
+        if (this.mode === 'draw') {
+            if (key === 'b') {
+                e.preventDefault();
+                this.selectTool('brush');
+            } else if (key === 'e') {
+                e.preventDefault();
+                this.selectTool('eraser');
+            } else if (key === 'c' && !ctrl) {
+                e.preventDefault();
+                // 打开颜色选择器
+                if (this.colorPicker) {
+                    this.colorPicker.click();
+                }
+            }
+        }
+        
+        // 全选（仅在编辑模式下）
+        if (ctrl && key === 'a' && this.mode === 'edit') {
             e.preventDefault();
             this.selectAll();
         }
         
-        // 方向键微调
-        else if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key)) {
+        // 方向键微调（仅在编辑模式下）
+        else if (['arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(key) && this.mode === 'edit') {
             e.preventDefault();
             this.nudgeSelected(key);
         }
         
-        // 图层调整快捷键
-        else if (key === '[' || key === ']') {
+        // 图层调整快捷键（仅在编辑模式下）
+        else if ((key === '[' || key === ']') && this.mode === 'edit') {
             e.preventDefault();
             if (e.shiftKey) {
                 // Shift + [ 移到最底层, Shift + ] 移到最顶层
@@ -747,57 +1211,6 @@ class CanvasEditor {
         }
     }
     
-    // 历史记录
-    saveHistory() {
-        const state = JSON.stringify(this.images.map(img => ({
-            x: img.x,
-            y: img.y,
-            width: img.width,
-            height: img.height,
-            rotation: img.rotation,
-            opacity: img.opacity,
-            source: img.source
-        })));
-        
-        // 删除当前位置之后的历史
-        this.history = this.history.slice(0, this.historyIndex + 1);
-        
-        // 添加新状态
-        this.history.push(state);
-        
-        // 限制历史记录数量
-        if (this.history.length > this.maxHistory) {
-            this.history.shift();
-        } else {
-            this.historyIndex++;
-        }
-    }
-    
-    undo() {
-        if (this.historyIndex > 0) {
-            this.historyIndex--;
-            this.restoreHistory();
-        }
-    }
-    
-    redo() {
-        if (this.historyIndex < this.history.length - 1) {
-            this.historyIndex++;
-            this.restoreHistory();
-        }
-    }
-    
-    restoreHistory() {
-        const state = JSON.parse(this.history[this.historyIndex]);
-        state.forEach((imgState, index) => {
-            if (this.images[index]) {
-                Object.assign(this.images[index], imgState);
-            }
-        });
-        this.renderComposite();
-        this.updateNodeData();
-    }
-    
     renderComposite() {
         // 清空画布（使用逻辑尺寸）
         this.ctx.clearRect(0, 0, this.canvas.width / this.dpr, this.canvas.height / this.dpr);
@@ -831,15 +1244,25 @@ class CanvasEditor {
             }
         }
         
-        // 绘制选中框和控制点
-        for (const img of this.images) {
-            if (this.selectedImages.has(img)) {
-                this.drawSelection(img);
+        // 绘制绘画层
+        if (this.drawingCanvas) {
+            this.ctx.save();
+            this.ctx.globalAlpha = 1.0;
+            this.ctx.drawImage(this.drawingCanvas, 0, 0, this.canvas.width / this.dpr, this.canvas.height / this.dpr);
+            this.ctx.restore();
+        }
+        
+        // 绘制选中框和控制点（仅在编辑模式下）
+        if (this.mode === 'edit') {
+            for (const img of this.images) {
+                if (this.selectedImages.has(img)) {
+                    this.drawSelection(img);
+                }
             }
         }
         
         // 如果没有内容，显示提示
-        if (this.images.length === 0) {
+        if (this.images.length === 0 && (!this.drawingCanvas || this.drawingPaths.length === 0)) {
             const logicalWidth = this.canvas.width / this.dpr;
             const logicalHeight = this.canvas.height / this.dpr;
             
@@ -871,7 +1294,9 @@ class CanvasEditor {
         this.ctx.textAlign = 'right';
         this.ctx.textBaseline = 'bottom';
         
-        const helpText = '快捷键: [ ] 调整图层';
+        const helpText = this.mode === 'draw' 
+            ? '快捷键: B画笔 E橡皮 C颜色 D切换模式'
+            : '快捷键: [ ]调整图层 D切换绘画';
         const padding = 10;
         this.ctx.fillText(helpText, logicalWidth - padding, logicalHeight - padding);
         
@@ -1160,6 +1585,31 @@ class CanvasEditor {
         // 更新节点的composition_data
         const bgImage = this.images.find(img => img.isBackground);
         
+        // 将绘画层转换为base64数据
+        let drawingData = null;
+        if (this.drawingCanvas && this.drawingPaths.length > 0) {
+            // 创建临时canvas来导出绘画层
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            // 设置尺寸（不含DPR，输出原始尺寸）
+            if (bgImage) {
+                tempCanvas.width = bgImage.originalWidth;
+                tempCanvas.height = bgImage.originalHeight;
+            } else {
+                tempCanvas.width = 1024;
+                tempCanvas.height = 1024;
+            }
+            
+            // 绘制绘画层内容（需要缩放以匹配输出尺寸）
+            const scale = bgImage ? bgImage.originalWidth / (this.drawingCanvas.width / this.dpr) : 1;
+            tempCtx.scale(scale, scale);
+            tempCtx.drawImage(this.drawingCanvas, 0, 0, this.drawingCanvas.width / this.dpr, this.drawingCanvas.height / this.dpr);
+            
+            // 转换为base64
+            drawingData = tempCanvas.toDataURL('image/png');
+        }
+        
         const data = {
             images: this.images.map((img, index) => {
                 // 背景图始终保存为(0,0)位置，因为它会填充整个输出画布
@@ -1207,7 +1657,8 @@ class CanvasEditor {
                     };
                 }
             }),
-            settings: {}
+            settings: {},
+            drawingLayer: drawingData  // 添加绘画层数据
         };
         
         
@@ -1238,12 +1689,28 @@ class CanvasEditor {
             canvasHeight = Math.round(height * scale);
         }
         
+        // 保存当前绘画内容
+        const tempCanvas = document.createElement('canvas');
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCanvas.width = this.drawingCanvas.width;
+        tempCanvas.height = this.drawingCanvas.height;
+        tempCtx.drawImage(this.drawingCanvas, 0, 0);
+        
         // 设置Canvas的实际分辨率（考虑高DPI）
         this.canvas.width = canvasWidth * this.dpr;
         this.canvas.height = canvasHeight * this.dpr;
         
+        // 同时调整绘画层canvas的尺寸
+        this.drawingCanvas.width = canvasWidth * this.dpr;
+        this.drawingCanvas.height = canvasHeight * this.dpr;
+        
         // 重新设置缩放
         this.ctx.scale(this.dpr, this.dpr);
+        this.drawingCtx.scale(this.dpr, this.dpr);
+        
+        // 恢复绘画内容
+        this.drawingCtx.drawImage(tempCanvas, 0, 0, tempCanvas.width, tempCanvas.height, 
+                                  0, 0, this.drawingCanvas.width, this.drawingCanvas.height);
         
         // 重新设置图像质量
         this.ctx.imageSmoothingEnabled = true;
@@ -1502,8 +1969,17 @@ app.registerExtension({
                         node.updateInputs();
                     }
                     
+                    // 创建容器来包含工具栏和Canvas
+                    const container = document.createElement("div");
+                    container.style.cssText = `
+                        position: relative;
+                        width: 100%;
+                        height: 100%;
+                    `;
+                    
                     // 创建Canvas元素
                     const canvasEl = document.createElement("canvas");
+                    container.appendChild(canvasEl);
                     
                     // 获取设备像素比，支持高DPI显示
                     const dpr = window.devicePixelRatio || 1;
@@ -1531,11 +2007,11 @@ app.registerExtension({
                                     "• 拖拽绿色手柄: 旋转图片\n" +
                                     "• [ / ]: 下移/上移一层\n" +
                                     "• Shift+[ / Shift+]: 移到最底/最顶层\n" +
-                                    "• Ctrl+Z/Y: 撤销/重做";
+                                    "• D: 切换绘画模式";
                     
-                    // 使用addDOMWidget添加Canvas
+                    // 使用addDOMWidget添加容器（包含Canvas和工具栏）
                     console.log("[ImageCompositor] Adding Canvas widget");
-                    const canvasWidget = node.addDOMWidget("canvas_display", "canvas", canvasEl, {
+                    const canvasWidget = node.addDOMWidget("canvas_display", "canvas", container, {
                         serialize: false,
                         hideOnZoom: false,
                     });
