@@ -1416,18 +1416,22 @@ class CanvasEditor {
         const source = index === 0 ? 'background' : `input_${index}`;
         const existingIndex = this.images.findIndex(img => img.source === source);
         
-        // 如果图片已存在且源相同，检查是否真的需要更新
+        // 如果图片已存在，更新它
         if (existingIndex >= 0) {
             const existing = this.images[existingIndex];
             
-            // 如果源路径相同，直接返回，避免重复加载
-            if (existing.element && existing.element.src === src) {
-                console.log(`[CanvasEditor] Image ${source} already loaded with same src, skipping`);
-                return;
+            // 总是更新图片，即使URL相同（内容可能已改变）
+            // 添加时间戳参数来避免浏览器缓存
+            const img = new Image();
+            
+            // 为了避免缓存，给URL添加时间戳（如果是blob或data URL则不添加）
+            let imgSrc = src;
+            if (!src.startsWith('blob:') && !src.startsWith('data:')) {
+                imgSrc = src + (src.includes('?') ? '&' : '?') + 't=' + Date.now();
             }
             
-            // 如果已存在但源不同，更新图片元素
-            const img = new Image();
+            console.log(`[CanvasEditor] Updating image ${source}`);
+            
             img.onload = () => {
                 // 检查图片是否真的变化了
                 const sizeChanged = existing.originalWidth !== img.naturalWidth || 
@@ -1458,26 +1462,61 @@ class CanvasEditor {
                             existing.y = 0;
                         }
                     } else {
-                        // 叠加图：保持相对比例调整大小
-                        const oldAspect = existing.width / existing.height;
-                        const newAspect = img.naturalWidth / img.naturalHeight;
+                        // 叠加图：重新计算合适的大小（与新图片逻辑一致）
+                        const bgImage = this.images.find(img => img.isBackground);
+                        let maxWidth, maxHeight;
                         
-                        // 如果宽高比变化，调整尺寸以保持新的比例
-                        if (Math.abs(oldAspect - newAspect) > 0.01) {
-                            existing.height = existing.width / newAspect;
+                        if (bgImage) {
+                            // 如果有背景图，使用背景图的范围
+                            maxWidth = bgImage.width * 0.8;  // 留出一些边距
+                            maxHeight = bgImage.height * 0.8;
+                        } else {
+                            // 如果没有背景图，使用画布范围
+                            const logicalWidth = this.canvas.width / this.dpr;
+                            const logicalHeight = this.canvas.height / this.dpr;
+                            maxWidth = logicalWidth * 0.8;
+                            maxHeight = logicalHeight * 0.8;
                         }
+                        
+                        // 计算缩放比例，确保图片适合范围
+                        const scale = Math.min(
+                            maxWidth / img.naturalWidth,
+                            maxHeight / img.naturalHeight,
+                            1  // 不放大超过原始尺寸
+                        );
+                        
+                        const newWidth = img.naturalWidth * scale;
+                        const newHeight = img.naturalHeight * scale;
+                        
+                        // 保持中心位置不变
+                        const centerX = existing.x + existing.width / 2;
+                        const centerY = existing.y + existing.height / 2;
+                        
+                        existing.width = newWidth;
+                        existing.height = newHeight;
+                        existing.x = centerX - newWidth / 2;
+                        existing.y = centerY - newHeight / 2;
+                        
+                        console.log(`[CanvasEditor] Updated overlay image size: ${newWidth}x${newHeight}`);
                     }
                 }
                 // 如果图片没变化，保持所有现有属性不变
                 
                 this.renderComposite();
             };
-            img.src = src;
+            img.src = imgSrc;  // 使用带时间戳的URL
             return;
         }
         
         // 添加新图片
         console.log(`[CanvasEditor] Adding new image ${source}`);
+        
+        // 为了避免缓存，给URL添加时间戳（如果是blob或data URL则不添加）
+        let imgSrc = src;
+        if (!src.startsWith('blob:') && !src.startsWith('data:')) {
+            imgSrc = src + (src.includes('?') ? '&' : '?') + 't=' + Date.now();
+        }
+        
         const img = new Image();
         img.onload = () => {
             let imageData;
@@ -1578,7 +1617,7 @@ class CanvasEditor {
             this.renderComposite();
             this.updateNodeData();
         };
-        img.src = src;
+        img.src = imgSrc;  // 使用带时间戳的URL
     }
     
     updateNodeData() {
@@ -1782,6 +1821,10 @@ app.registerExtension({
                 node.updateDebounceTimer = null;
                 node.isUpdating = false;
                 
+                // 添加图片检查相关
+                node.loadedImages = {};  // 保存已加载图片的信息
+                node.imageCheckInterval = null;  // 定期检查的定时器
+                
                 // 动态输入管理
                 node.updateInputs = function() {
                     const inputCountWidget = this.widgets?.find(w => w.name === "input_count");
@@ -1856,6 +1899,75 @@ app.registerExtension({
                         node.updateDebounceTimer = null;
                     }, 50);  // 50ms防抖延迟
                 });
+                
+                // 检查连接的图片是否有更新
+                node.checkForImageUpdates = function() {
+                    if (!this.canvasEditor || this.isUpdating) return false;
+                    
+                    let hasUpdates = false;
+                    
+                    // 检查背景图
+                    const bgInput = this.inputs?.find(input => input.name === "background_image");
+                    if (bgInput && bgInput.link !== null) {
+                        const linkInfo = app.graph.links[bgInput.link];
+                        if (linkInfo) {
+                            const sourceNode = app.graph.getNodeById(linkInfo.origin_id);
+                            if (sourceNode && sourceNode.imgs && sourceNode.imgs.length > 0) {
+                                const img = sourceNode.imgs[0];
+                                if (img && img.src) {
+                                    const key = 'background';
+                                    const currentInfo = {
+                                        src: img.src,
+                                        timestamp: Date.now()
+                                    };
+                                    
+                                    // 检查是否有变化
+                                    if (!this.loadedImages[key] || this.loadedImages[key].src !== currentInfo.src) {
+                                        hasUpdates = true;
+                                        console.log("[ImageCompositor] Detected background image change");
+                                    }
+                                    
+                                    this.loadedImages[key] = currentInfo;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // 检查叠加图片
+                    const inputCountWidget = this.widgets?.find(w => w.name === "input_count");
+                    const maxInputs = inputCountWidget ? inputCountWidget.value : 3;
+                    
+                    for (let i = 1; i <= maxInputs; i++) {
+                        const inputName = `overlay_image_${i}`;
+                        const input = this.inputs?.find(inp => inp.name === inputName);
+                        if (input && input.link !== null) {
+                            const linkInfo = app.graph.links[input.link];
+                            if (linkInfo) {
+                                const sourceNode = app.graph.getNodeById(linkInfo.origin_id);
+                                if (sourceNode && sourceNode.imgs && sourceNode.imgs.length > 0) {
+                                    const img = sourceNode.imgs[0];
+                                    if (img && img.src) {
+                                        const key = `input_${i}`;
+                                        const currentInfo = {
+                                            src: img.src,
+                                            timestamp: Date.now()
+                                        };
+                                        
+                                        // 检查是否有变化
+                                        if (!this.loadedImages[key] || this.loadedImages[key].src !== currentInfo.src) {
+                                            hasUpdates = true;
+                                            console.log(`[ImageCompositor] Detected overlay image ${i} change`);
+                                        }
+                                        
+                                        this.loadedImages[key] = currentInfo;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    
+                    return hasUpdates;
+                };
                 
                 // 添加更新Canvas的方法
                 node.updateCanvasFromInputs = function() {
@@ -2040,6 +2152,17 @@ app.registerExtension({
                     node.canvasEditor = new CanvasEditor(canvasEl, node);
                     console.log(`[ImageCompositor] Canvas initialized - Display: ${displaySize}x${displaySize}, Actual: ${canvasEl.width}x${canvasEl.height}, DPR: ${dpr}`);
                     
+                    // 启动定期检查图片更新（每500ms检查一次）
+                    if (node.imageCheckInterval) {
+                        clearInterval(node.imageCheckInterval);
+                    }
+                    node.imageCheckInterval = setInterval(() => {
+                        if (node.checkForImageUpdates()) {
+                            console.log("[ImageCompositor] Image updates detected, refreshing canvas");
+                            node.updateCanvasFromInputs();
+                        }
+                    }, 500);  // 每500毫秒检查一次
+                    
                     // 初始设置节点尺寸（基于默认3个输入计算）
                     // Canvas 400px + widget 30px + 3个输入90px + padding 20px = 540px
                     node.size[0] = Math.max(node.size[0], 420);
@@ -2069,6 +2192,26 @@ app.registerExtension({
                         }
                     }, 100);
                 }, 0);
+                
+                // 添加节点移除时的清理
+                const origOnRemoved = node.onRemoved;
+                node.onRemoved = function() {
+                    // 清理定时器
+                    if (this.imageCheckInterval) {
+                        clearInterval(this.imageCheckInterval);
+                        this.imageCheckInterval = null;
+                        console.log("[ImageCompositor] Cleared image check interval");
+                    }
+                    if (this.updateDebounceTimer) {
+                        clearTimeout(this.updateDebounceTimer);
+                        this.updateDebounceTimer = null;
+                    }
+                    
+                    // 调用原始方法
+                    if (origOnRemoved) {
+                        origOnRemoved.apply(this, arguments);
+                    }
+                };
             });
             
             // 扩展节点执行后的处理
