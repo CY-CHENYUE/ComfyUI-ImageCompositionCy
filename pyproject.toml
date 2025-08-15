@@ -11,4 +11,4 @@ Issues = "https://github.com/CY-CHENYUE/ComfyUI-ImageCompositionCY/issues"
 [tool.comfy]
 PublisherId = "cychenyue"
 DisplayName = "Image Composition CY"
-Icon = "🎨"
+Icon = ""
