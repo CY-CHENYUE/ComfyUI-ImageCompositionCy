@@ -1,0 +1,14 @@
+[project]
+name = "imagecomposition-cy"
+description = "Real-time multi-image composition node for ComfyUI with interactive canvas editor"
+version = "1.0.0"
+license = {file = "LICENSE"}
+
+[project.urls]
+Repository = "https://github.com/CY-CHENYUE/ComfyUI-ImageCompositionCY"
+Issues = "https://github.com/CY-CHENYUE/ComfyUI-ImageCompositionCY/issues"
+
+[tool.comfy]
+PublisherId = "cychenyue"
+DisplayName = "Image Composition CY"
+Icon = "🎨"
