@@ -42,8 +42,30 @@ def pil_to_tensor(image):
     Returns:
         torch.Tensor [1, H, W, C]
     """
-    if image.mode not in ["RGB", "RGBA"]:
+    # 保留RGBA格式，确保透明度信息不丢失
+    if image.mode == "RGBA":
+        # 保持RGBA格式
+        pass
+    elif image.mode == "RGB":
+        # RGB格式保持不变
+        pass
+    elif image.mode == "L":
+        # 灰度图转换为RGB
         image = image.convert("RGB")
+    elif image.mode == "P":
+        # 调色板模式，检查是否有透明度
+        if 'transparency' in image.info:
+            # 有透明度信息，转换为RGBA
+            image = image.convert("RGBA")
+        else:
+            # 无透明度，转换为RGB
+            image = image.convert("RGB")
+    else:
+        # 其他格式尝试转换为RGBA以保留可能的透明度
+        try:
+            image = image.convert("RGBA")
+        except:
+            image = image.convert("RGB")
     
     np_image = np.array(image).astype(np.float32) / 255.0
     tensor = torch.from_numpy(np_image).unsqueeze(0)
@@ -157,18 +179,27 @@ def composite_images(canvas, overlay_images, images_config):
             blend_mode = img_config.get("blendMode", "normal")
             
             if blend_mode == "normal":
-                canvas.paste(transformed_img, pos, transformed_img)
+                # 使用alpha_composite来正确处理透明度
+                temp = Image.new('RGBA', canvas.size, (0, 0, 0, 0))
+                # 确保图像是RGBA格式以便正确合成
+                if transformed_img.mode == 'RGBA':
+                    temp.paste(transformed_img, pos)
+                else:
+                    # 如果不是RGBA，需要转换
+                    transformed_img_rgba = transformed_img.convert('RGBA')
+                    temp.paste(transformed_img_rgba, pos)
+                canvas = Image.alpha_composite(canvas, temp)
             else:
                 # 简单的混合模式支持
                 temp = Image.new('RGBA', canvas.size, (0, 0, 0, 0))
-                temp.paste(transformed_img, pos, transformed_img)
+                temp.paste(transformed_img, pos)
                 
                 if blend_mode == "multiply":
                     canvas = Image.blend(canvas, temp, 0.5)
                 elif blend_mode == "screen":
                     canvas = Image.blend(canvas, temp, 0.7)
                 else:
-                    canvas.paste(transformed_img, pos, transformed_img)
+                    canvas = Image.alpha_composite(canvas, temp)
     
     return canvas
 
@@ -257,18 +288,27 @@ def composite_images_v2(canvas, all_images, images_config):
             blend_mode = img_config.get("blendMode", "normal")
             
             if blend_mode == "normal":
-                canvas.paste(transformed_img, pos, transformed_img)
+                # 使用alpha_composite来正确处理透明度
+                temp = Image.new('RGBA', canvas.size, (0, 0, 0, 0))
+                # 确保图像是RGBA格式以便正确合成
+                if transformed_img.mode == 'RGBA':
+                    temp.paste(transformed_img, pos)
+                else:
+                    # 如果不是RGBA，需要转换
+                    transformed_img_rgba = transformed_img.convert('RGBA')
+                    temp.paste(transformed_img_rgba, pos)
+                canvas = Image.alpha_composite(canvas, temp)
             else:
                 # 简单的混合模式支持
                 temp = Image.new('RGBA', canvas.size, (0, 0, 0, 0))
-                temp.paste(transformed_img, pos, transformed_img)
+                temp.paste(transformed_img, pos)
                 
                 if blend_mode == "multiply":
                     canvas = Image.blend(canvas, temp, 0.5)
                 elif blend_mode == "screen":
                     canvas = Image.blend(canvas, temp, 0.7)
                 else:
-                    canvas.paste(transformed_img, pos, transformed_img)
+                    canvas = Image.alpha_composite(canvas, temp)
     
     return canvas
 

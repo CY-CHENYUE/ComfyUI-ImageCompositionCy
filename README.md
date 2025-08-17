@@ -12,9 +12,19 @@
 - 📐 **精确控制** - 支持输入精确数值调整位置和尺寸
 - 🎭 **图层管理** - 调整图片层级，控制遮挡关系
 - 🎨 **绘画工具** - 颜色选择器、画笔大小和透明度调节
+- 🔀 **透明度支持** - 完整保留和处理PNG图片的透明通道
 - 💾 **参数保存** - 自动保存布局配置和绘画内容到工作流
 
 ## 📦 安装
+
+### 方法一：通过 ComfyUI Manager 安装（推荐）
+
+1. 在ComfyUI中打开 **ComfyUI Manager**
+2. 搜索 **"ImageCompositionCy"** 或 **"Image Compositor"**
+3. 点击 **Install** 安装
+4. 重启ComfyUI
+
+### 方法二：手动安装
 
 1. 进入ComfyUI的 `custom_nodes` 目录：
 ```bash
@@ -95,17 +105,71 @@ pip install -r requirements.txt
 - 可折叠以节省空间
 - 位于画布右上角，不遮挡内容
 
+### 透明度处理
+
+本节点集提供了两个专门用于处理图片透明度的辅助节点：
+
+#### Load Image (Alpha) 🖼️
+专门用于加载并保留PNG图片透明通道的节点。
+
+**特点：**
+- 完整保留PNG图片的透明信息
+- 输出4通道RGBA图像
+- 直接兼容Image Compositor节点
+
+**使用场景：**
+- 需要保留原始透明背景的PNG图片
+- 制作需要透明通道的合成效果
+
+#### Combine Image Alpha 🔀
+将标准LoadImage节点的RGB图像和蒙版组合成带透明度的图像。
+
+**特点：**
+- 接收RGB图像和MASK输入
+- 输出带透明通道的RGBA图像
+- 与ComfyUI标准节点完全兼容
+
+**使用场景：**
+- 使用标准LoadImage节点但需要透明度
+- 从其他节点获取蒙版并应用为透明通道
+- 动态生成透明度效果
+
+**工作流程示例：**
+```
+LoadImage → [IMAGE] → Combine Image Alpha → [RGBA] → Image Compositor
+      └─→ [MASK] ─→ ┘
+```
+
 ## 📖 节点参数
 
-### 输入
+### Image Compositor 节点
+
+#### 输入
 - `input_count` (INT) - 叠加图片数量（1-20）
 - `background_image` (IMAGE) - 底图，决定画布尺寸（可选）
 - `overlay_image_*` (IMAGE) - 叠加图片（根据input_count动态显示）
 - `composition_data` (STRING) - JSON格式的布局配置（自动管理）
 
-### 输出
+#### 输出
 - `composite` (IMAGE) - 合成后的图片（包含绘画内容）
 - `mask` (MASK) - 透明通道蒙版
+
+### Load Image (Alpha) 节点
+
+#### 输入
+- `image` - 要加载的图片文件
+
+#### 输出
+- `IMAGE` - 带透明通道的RGBA图像
+
+### Combine Image Alpha 节点
+
+#### 输入
+- `image` (IMAGE) - RGB图像
+- `mask` (MASK) - Alpha蒙版
+
+#### 输出
+- `image` (IMAGE) - 组合后的RGBA图像
 
 ## 🎨 界面说明
 

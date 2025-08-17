@@ -12,9 +12,19 @@ A powerful ComfyUI multi-image composition node that supports real-time adjustme
 - 📐 **Precise Control** - Support for precise numerical input for position and size
 - 🎭 **Layer Management** - Adjust image layer order, control occlusion relationships
 - 🎨 **Drawing Tools** - Color picker, brush size and opacity adjustment
+- 🔀 **Transparency Support** - Fully preserve and process PNG transparency channels
 - 💾 **Auto Save** - Layout configuration and drawing content automatically saved to workflow
 
 ## 📦 Installation
+
+### Method 1: Install via ComfyUI Manager (Recommended)
+
+1. Open **ComfyUI Manager** in ComfyUI
+2. Search for **"ImageCompositionCy"** or **"Image Compositor"**
+3. Click **Install**
+4. Restart ComfyUI
+
+### Method 2: Manual Installation
 
 1. Navigate to ComfyUI's `custom_nodes` directory:
 ```bash
@@ -96,17 +106,71 @@ Click the toolbar pencil icon or press `D` key to switch to drawing mode:
 - Collapsible to save space
 - Located at top-right corner of canvas
 
+### Transparency Handling
+
+This node set provides two specialized nodes for handling image transparency:
+
+#### Load Image (Alpha) 🖼️
+A specialized node for loading and preserving PNG transparency channels.
+
+**Features:**
+- Fully preserves PNG transparency information
+- Outputs 4-channel RGBA images
+- Directly compatible with Image Compositor node
+
+**Use Cases:**
+- Loading PNG images with transparent backgrounds
+- Creating compositions that require transparency
+
+#### Combine Image Alpha 🔀
+Combines RGB images from standard LoadImage node with masks to create transparent images.
+
+**Features:**
+- Accepts RGB image and MASK inputs
+- Outputs RGBA images with transparency
+- Fully compatible with ComfyUI standard nodes
+
+**Use Cases:**
+- Using standard LoadImage node but needing transparency
+- Obtaining masks from other nodes and applying as alpha channel
+- Dynamically generating transparency effects
+
+**Workflow Example:**
+```
+LoadImage → [IMAGE] → Combine Image Alpha → [RGBA] → Image Compositor
+      └─→ [MASK] ─→ ┘
+```
+
 ## 📖 Node Parameters
 
-### Inputs
+### Image Compositor Node
+
+#### Inputs
 - `input_count` (INT) - Number of overlay images (1-20)
 - `background_image` (IMAGE) - Background image, determines canvas size (optional)
 - `overlay_image_*` (IMAGE) - Overlay images (dynamically displayed based on input_count)
 - `composition_data` (STRING) - JSON format layout configuration (auto-managed)
 
-### Outputs
+#### Outputs
 - `composite` (IMAGE) - Composited image (including drawings)
 - `mask` (MASK) - Alpha channel mask
+
+### Load Image (Alpha) Node
+
+#### Inputs
+- `image` - Image file to load
+
+#### Outputs
+- `IMAGE` - RGBA image with transparency channel
+
+### Combine Image Alpha Node
+
+#### Inputs
+- `image` (IMAGE) - RGB image
+- `mask` (MASK) - Alpha mask
+
+#### Outputs
+- `image` (IMAGE) - Combined RGBA image
 
 ## 🎨 Interface Description
 
