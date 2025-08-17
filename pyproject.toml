@@ -1,7 +1,7 @@
 [project]
 name = "imagecomposition-cy"
 description = "Real-time multi-image composition node for ComfyUI with interactive canvas editor"
-version = "1.0.1"
+version = "1.0.2"
 license = {file = "LICENSE"}
 
 [project.urls]
